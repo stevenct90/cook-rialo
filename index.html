@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cook RIALO</title>
+  <style>
+    body {
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      font-family: Arial, sans-serif;
+      color: white;
+      text-align: center;
+      overflow: hidden;
+      margin:0; padding:0;
+    }
+    h1 {
+      color: #00ffcc;
+      text-shadow: 0 0 10px #00ffcc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    h1 img {
+      width: 50px;
+      height: 50px;
+      border-radius: 12px;
+      animation: glow 2s infinite alternate, bounce 3s infinite;
+      transition: transform 0.3s ease;
+    }
+    h1 img:hover { transform: scale(1.2) rotate(5deg); filter: drop-shadow(0 0 15px #00ffee) drop-shadow(0 0 25px #00ffee); }
+    @keyframes glow { from { box-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc; } to { box-shadow: 0 0 25px #00ffee, 0 0 40px #00ffee; } }
+    @keyframes bounce { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-6px);} }
+    #timer { font-size: 22px; font-weight: bold; margin: 10px; color: #ffcc00; text-shadow: 0 0 10px #ffcc00; }
+    #timerBar { width: 300px; height: 20px; background: #444; margin: 0 auto 10px; border-radius: 10px; overflow: hidden; }
+    #timerFill { width: 100%; height: 100%; background: #ffcc00; transition: width 1s linear; }
+    #mistakes { font-size: 18px; color: #ff4444; margin: 5px; display: none; }
+    #slots { display: flex; justify-content: center; gap: 15px; margin: 30px; }
+    .slot { width:60px;height:60px;border:2px dashed #fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:bold;color:#aaa;transition:all 0.3s ease;}
+    .slot.correct { background: #00ffcc; color:#000; border:2px solid #00ffcc; box-shadow:0 0 15px #00ffcc;}
+    .slot.wrong { animation: shake 0.3s; border-color:red;}
+    @keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-5px);} 75%{transform:translateX(5px);} }
+    #letters { display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:20px; }
+    .letter { width:60px; height:60px; background:#ffcc00; color:#000; font-size:28px; font-weight:bold; border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:grab; box-shadow:0 0 10px #ffcc00; transition:transform 0.2s, opacity 0.3s;}
+    .letter:hover { transform: scale(1.2) rotate(-5deg); }
+    .confetti { position:absolute; width:10px; height:10px; opacity:0.7; top:0; animation: fall 3s linear forwards; }
+    @keyframes fall { to { transform: translateY(100vh) rotate(360deg); opacity:0; } }
+    #winOverlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); display:flex; flex-direction:column; align-items:center; justify-content:center; color:#00ffcc; font-size:28px; font-weight:bold; text-align:center; gap:20px; opacity:0; pointer-events:none; transition:opacity 0.5s ease; z-index:1000; }
+    #winOverlay.show { opacity:1; pointer-events:auto; }
+    #winOverlay button { padding:10px 20px; font-size:20px; font-weight:bold; border:none; border-radius:10px; background:#ffcc00; color:#000; cursor:pointer; transition:transform 0.2s;}
+    #winOverlay button:hover { transform:scale(1.1); }
+    #startBtn { padding:15px 30px; font-size:22px; font-weight:bold; border:none; border-radius:10px; background:#00ffcc; color:#000; cursor:pointer; margin-top:20px; transition:transform 0.2s; }
+    #startBtn:active, #winOverlay button:active { transform:scale(0.95); box-shadow:0 0 10px inset #ffcc00; }
+  </style>
+</head>
+<body>
+  <h1>Cook RIALO! <img src="ra.png" alt="Rialo Logo"></h1>
+  <button id="startBtn">Start</button>
+  <div id="timer">⏱️ Time left: 30s</div>
+  <div id="timerBar"><div id="timerFill"></div></div>
+  <div id="mistakes">Mistakes: 0</div>
+  <div id="slots"></div>
+  <div id="letters"></div>
+
+  <!-- Local applause -->
+  <audio id="applauseSound" src="applause.mp3"></audio>
+
+  <div id="winOverlay">
+    <div id="winMessage"></div>
+    <button onclick="restartGame()">Play Again</button>
+  </div>
+
+  <script>
+    const target = "RIALO";
+    const slotsDiv = document.getElementById("slots");
+    const lettersDiv = document.getElementById("letters");
+    const timerDiv = document.getElementById("timer");
+    const timerFill = document.getElementById("timerFill");
+    const winOverlay = document.getElementById("winOverlay");
+    const winMessage = document.getElementById("winMessage");
+    const startBtn = document.getElementById("startBtn");
+    const mistakesDiv = document.getElementById("mistakes");
+    const applauseSound = document.getElementById("applauseSound");
+
+    let timeLeft = 30, timer, mistakes = 0;
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playSound(freq=440,dur=200,type='sine'){
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type=type; osc.frequency.value=freq;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(); osc.stop(audioCtx.currentTime+dur/1000);
+    }
+
+    function updateTimer(){
+      timeLeft--; timerDiv.textContent = "⏱️ Time left: "+timeLeft+"s";
+      timerFill.style.width=(timeLeft/30*100)+"%";
+      if(timeLeft<=0){ clearInterval(timer); showOverlay("⏰ Time’s up! You couldn’t cook RIALO 😢"); }
+    }
+
+    function restartGame(){ location.reload(); }
+
+    function initGame(){
+      startBtn.style.display="none";
+      mistakes=0;
+      mistakesDiv.style.display="block"; mistakesDiv.textContent="Mistakes: 0";
+
+      slotsDiv.innerHTML="";
+      target.split("").forEach((letter,index)=>{
+        const slot=document.createElement("div");
+        slot.className="slot"; slot.dataset.letter=letter; slot.dataset.index=index;
+        slotsDiv.appendChild(slot);
+      });
+
+      const extras=["X","Y","Z","B"];
+      const allLetters=target.split("").concat(extras).sort(()=>Math.random()-0.5);
+      lettersDiv.innerHTML="";
+      allLetters.forEach((l,idx)=>{
+        const div=document.createElement("div");
+        div.className="letter"; div.draggable=true; div.textContent=l; div.dataset.id=idx;
+        div.addEventListener("dragstart", e=>e.dataTransfer.setData("text", idx));
+        lettersDiv.appendChild(div);
+      });
+
+      document.querySelectorAll(".slot").forEach(slot=>{
+        slot.addEventListener("dragover", e=>e.preventDefault());
+        slot.addEventListener("drop", e=>{
+          const id=e.dataTransfer.getData("text");
+          const draggedDiv=[...lettersDiv.children].find(c=>c.dataset.id===id);
+          if(draggedDiv.textContent===slot.dataset.letter){
+            slot.textContent=slot.dataset.letter; slot.classList.add("correct");
+            if(draggedDiv) draggedDiv.style.opacity="0.3";
+            playSound(600,100,'triangle'); checkWin();
+          } else {
+            mistakes++; mistakesDiv.textContent="Mistakes: "+mistakes;
+            slot.classList.add("wrong"); playSound(200,200,'sawtooth');
+            setTimeout(()=>slot.classList.remove("wrong"),300);
+          }
+        });
+      });
+
+      timeLeft=30; timerDiv.textContent="⏱️ Time left: "+timeLeft+"s"; timerFill.style.width="100%";
+      timer=setInterval(updateTimer,1000);
+    }
+
+    function checkWin(){
+      const slots=[...document.querySelectorAll(".slot")];
+      const allCorrect=slots.every(s=>s.textContent===s.dataset.letter);
+      if(allCorrect){
+        clearInterval(timer);
+        applauseSound.play(); // local MP3 chắc chắn phát
+        launchConfetti();
+        showOverlay(`🎉 You cooked RIALO with ${timeLeft}s left and ${mistakes} mistakes!`);
+      }
+    }
+
+    function launchConfetti(){
+      for(let i=0;i<100;i++){
+        const conf=document.createElement("div");
+        conf.className="confetti";
+        conf.style.left=Math.random()*window.innerWidth+"px";
+        conf.style.background=`hsl(${Math.random()*360},100%,50%)`;
+        conf.style.width=conf.style.height=5+Math.random()*8+"px";
+        conf.style.animationDuration=(2+Math.random()*2)+"s";
+        conf.style.transform=`rotate(${Math.random()*360}deg)`;
+        document.body.appendChild(conf);
+        setTimeout(()=>conf.remove(),4000);
+      }
+    }
+
+    function showOverlay(msg){ winMessage.textContent=msg; winOverlay.classList.add("show"); }
+
+    startBtn.addEventListener("click", initGame);
+  </script>
+</body>
+</html>
